@@ -49,9 +49,6 @@ static int xioctl(int fh, unsigned long request, void *arg) {
   do {
     r = ioctl(fh, request, arg);
   } while (r == -1 && errno == EINTR);
-  /* errno == EINTR means a signal occurred while the syscall was in
-   * progress. This retry logic ensures that if that happens, ioctl is
-   * retried. */
   return r;
 }
 
@@ -80,29 +77,20 @@ int main(void) {
   if (xioctl(fd, VIDIOC_QUERYCAP, &cap) == -1) {
     die("VIDIOC_QUERYCAP");
   }
-
-  // printf("driver: %.*s\n", (int)sizeof(cap.driver), (char *)cap.driver);
-  // printf("card:   %.*s\n", (int)sizeof(cap.card), (char *)cap.card);
-
-  __u32 caps =
-      (cap.capabilities & V4L2_CAP_DEVICE_CAPS)
-          ? cap.device_caps   /* bit set   -> use the per-node value */
-          : cap.capabilities; /* bit clear -> fall back to device-wide */
-
-  // printf("caps:   0x%08X\n", caps);
+  __u32 caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
+                                                          : cap.capabilities;
 
   if (!(caps & V4L2_CAP_VIDEO_CAPTURE)) {
     fprintf(stderr, "%s: this device node is not a video capture device\n",
             DEVICE);
     exit(EXIT_FAILURE);
   }
-  // printf("this device node is a capturing device\n");
 
   if (!(caps & V4L2_CAP_STREAMING)) {
-    fprintf(stderr, "%s: this device node is not a streaming device\n", DEVICE);
+    fprintf(stderr, "%s: this device node is not a streaming device\n",
+            DEVICE);
     exit(EXIT_FAILURE);
   }
-  // printf("this device node is a streaming device\n");
 
   struct v4l2_format fmt;
   memset(&fmt, 0, sizeof(fmt));
@@ -114,7 +102,6 @@ int main(void) {
   fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
   if (xioctl(fd, VIDIOC_S_FMT, &fmt) == -1) {
-    /* I filled the necessary parts; the kernel fills the remaining fields. */
     die("VIDIOC_S_FMT");
   }
 
@@ -125,16 +112,7 @@ int main(void) {
     exit(EXIT_FAILURE);
   }
 
-  /*
-   printf("colorspace:   %u\n", fmt.fmt.pix.colorspace);
-   printf("quantization: %u\n", fmt.fmt.pix.quantization);
-   printf("format:       %ux%u YUYV, %u bytes/frame\n",
-  fmt.fmt.pix.width,fmt.fmt.pix.height, fmt.fmt.pix.sizeimage);
-  printf("bytesperline: %u\n", fmt.fmt.pix.bytesperline);
-  */
   u32 stride = fmt.fmt.pix.bytesperline;
-
-  /* Init of buffer */
 
   struct v4l2_requestbuffers req;
   memset(&req, 0, sizeof(req));
@@ -146,7 +124,6 @@ int main(void) {
   if (xioctl(fd, VIDIOC_REQBUFS, &req) == -1) {
     die("VIDIOC_REQBUFS");
   }
-  // printf("buffer request: successful\n");
 
   if (req.count < 2) {
     fprintf(stderr, "not enough buffer memory\n");
@@ -157,9 +134,6 @@ int main(void) {
             (unsigned)NBUF);
     exit(EXIT_FAILURE);
   }
-  // printf("buffer count: %u\n", req.count);
-
-  /* querying buffers and mmap */
 
   for (unsigned int i = 0; i < req.count; i++) {
     struct v4l2_buffer buf;
@@ -174,15 +148,12 @@ int main(void) {
 
     buffers[i].length = buf.length;
     buffers[i].start = mmap(NULL, buf.length, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, fd, buf.m.offset);
+                             MAP_SHARED, fd, buf.m.offset);
 
     if (buffers[i].start == MAP_FAILED) {
       die("mmap");
     }
-    // printf("buffer[%u] mapping: successful\n", i);
   }
-
-  /* enqueueing buffers */
 
   for (unsigned int i = 0; i < req.count; i++) {
     enqueue(i);
@@ -193,8 +164,6 @@ int main(void) {
     fprintf(stderr, "malloc of RGB buffer failed\n");
     exit(EXIT_FAILURE);
   }
-
-  /* start streaming */
 
   signal(SIGINT, signalHandler);
 
@@ -207,8 +176,6 @@ int main(void) {
 
   unsigned long processed = 0, dropped = 0;
   unsigned long processed_t = 0;
-  double t_initial = now_sec();
-  double t_final = t_initial;
 
   while (!stop) {
     struct pollfd pfd = {.fd = fd, .events = POLLIN};
@@ -224,8 +191,6 @@ int main(void) {
       continue;
     }
 
-    /* At least one buffer is full */
-
     int newest = -1;
     unsigned int newest_bytes = 0;
     for (;;) {
@@ -236,7 +201,7 @@ int main(void) {
 
       if (xioctl(fd, VIDIOC_DQBUF, &buf) == -1) {
         if (errno == EAGAIN)
-          break; /* outgoing queue empty*/
+          break;
         die("VIDIOC_DQBUF");
       }
 
@@ -253,7 +218,6 @@ int main(void) {
       continue;
     }
 
-    /* preprocess */
     processed++;
     processed_t++;
 
@@ -272,16 +236,6 @@ int main(void) {
       free(rgb);
     }
 
-    /* t_final = now_sec();
-    if (t_final - t_initial >= 1.0) {
-      printf("fps: %.1f | dropped %lu | total %lu\n",
-             processed_t / (t_final - t_initial), dropped, processed);
-      t_initial = t_final;
-      processed_t = 0;
-    }
-    */
-
-    /* Always give the buffer back. Holding one starves the driver. */
     enqueue(newest);
   }
 
