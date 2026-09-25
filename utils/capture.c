@@ -17,6 +17,8 @@
 #define NBUF 8
 #define WIDTH 640
 #define HEIGHT 480
+#define NET_W 416
+#define NET_H 416
 
 static volatile sig_atomic_t stop = 0;
 
@@ -78,7 +80,7 @@ int main(void) {
     die("VIDIOC_QUERYCAP");
   }
   __u32 caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
-                                                          : cap.capabilities;
+                                                         : cap.capabilities;
 
   if (!(caps & V4L2_CAP_VIDEO_CAPTURE)) {
     fprintf(stderr, "%s: this device node is not a video capture device\n",
@@ -87,8 +89,7 @@ int main(void) {
   }
 
   if (!(caps & V4L2_CAP_STREAMING)) {
-    fprintf(stderr, "%s: this device node is not a streaming device\n",
-            DEVICE);
+    fprintf(stderr, "%s: this device node is not a streaming device\n", DEVICE);
     exit(EXIT_FAILURE);
   }
 
@@ -148,7 +149,7 @@ int main(void) {
 
     buffers[i].length = buf.length;
     buffers[i].start = mmap(NULL, buf.length, PROT_READ | PROT_WRITE,
-                             MAP_SHARED, fd, buf.m.offset);
+                            MAP_SHARED, fd, buf.m.offset);
 
     if (buffers[i].start == MAP_FAILED) {
       die("mmap");
@@ -159,11 +160,20 @@ int main(void) {
     enqueue(i);
   }
 
+  letterbox lb = letterbox_calc(WIDTH, HEIGHT, NET_W, NET_H);
+  printf("letterbox: %ux%u at (%u,%u)\n", lb.new_w, lb.new_h, lb.dx, lb.dy);
+
   float *dst = malloc(sizeof(float) * WIDTH * HEIGHT * 3);
-  if (dst == NULL) {
-    fprintf(stderr, "malloc of RGB buffer failed\n");
+  float *resized = malloc(sizeof(float) * lb.new_w * lb.new_h * 3);
+  float *final = malloc(sizeof(float) * NET_W * NET_H * 3);
+  unsigned char *rgb = malloc((size_t)NET_W * NET_H * 3);
+
+  if (dst == NULL || resized == NULL || final == NULL || rgb == NULL) {
+    fprintf(stderr, "malloc failed\n");
     exit(EXIT_FAILURE);
   }
+
+  fill_image(final, NET_W, NET_H, 0.5f);
 
   signal(SIGINT, signalHandler);
 
@@ -176,6 +186,9 @@ int main(void) {
 
   unsigned long processed = 0, dropped = 0;
   unsigned long processed_t = 0;
+  double prep_total = 0.0;
+  double t_initial = now_sec();
+  double t_final = t_initial;
 
   while (!stop) {
     struct pollfd pfd = {.fd = fd, .events = POLLIN};
@@ -221,22 +234,36 @@ int main(void) {
     processed++;
     processed_t++;
 
+    double t_prep = now_sec();
+
     yuyv_to_rgb(buffers[newest].start, stride, WIDTH, HEIGHT, dst);
+    resize_image(dst, WIDTH, HEIGHT, lb.new_w, lb.new_h, resized);
+    embed_image(resized, lb.new_w, lb.new_h, final, NET_W, NET_H, lb.dx, lb.dy);
+
+    prep_total += now_sec() - t_prep;
 
     if (processed == 100) {
       FILE *f = fopen("rgb.raw", "wb");
-      unsigned char *rgb = malloc((size_t)WIDTH * HEIGHT * 3);
-      if (f != NULL && rgb != NULL) {
-        to_rgb(dst, WIDTH, HEIGHT, rgb);
-        fwrite(rgb, 1, (size_t)WIDTH * HEIGHT * 3, f);
+      if (f != NULL) {
+        to_rgb(final, NET_W, NET_H, rgb);
+        fwrite(rgb, 1, (size_t)NET_W * NET_H * 3, f);
         fclose(f);
         printf("wrote rgb.raw (%u source bytes -> %u RGB bytes)\n",
-               newest_bytes, WIDTH * HEIGHT * 3);
+               newest_bytes, NET_W * NET_H * 3);
       }
-      free(rgb);
     }
 
     enqueue(newest);
+
+    t_final = now_sec();
+    if (t_final - t_initial >= 1.0) {
+      printf("fps: %.1f | prep: %.2f ms/frame | dropped %lu | total %lu\n",
+             processed_t / (t_final - t_initial),
+             1000.0 * prep_total / processed_t, dropped, processed);
+      t_initial = t_final;
+      processed_t = 0;
+      prep_total = 0.0;
+    }
   }
 
   printf("shutting down\n");
@@ -249,6 +276,9 @@ int main(void) {
     munmap(buffers[i].start, buffers[i].length);
   }
   free(dst);
+  free(resized);
+  free(final);
+  free(rgb);
   close(fd);
   return 0;
 }
