@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ldavi/inference_fpga/ncnn/cmake_install.cmake",
+		"/home/ldavi/inference_fpga/ncnn/src/cmake_install.cmake",
+		"/home/ldavi/inference_fpga/ncnn/benchmark/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

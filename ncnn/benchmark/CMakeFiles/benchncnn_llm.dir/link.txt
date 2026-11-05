@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/benchncnn_llm.dir/link.d CMakeFiles/benchncnn_llm.dir/benchncnn_llm.cpp.o -o benchncnn_llm  ../src/libncnn.a /usr/lib/libgomp.so /usr/lib/libpthread.a

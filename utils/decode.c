@@ -146,7 +146,7 @@ int pp_faces(detection *dets, float *src_image, int n, int max_dets, u16 src_w,
     if (left < 0 || top < 0 || left + iside > src_w || top + iside > src_h)
       continue;
 
-    crop_image(src_image, src_w, src_h, left, top, iside, to_crop);
+    my_crop_image(src_image, src_w, src_h, left, top, iside, to_crop);
 
     my_resize_image(to_crop, iside, iside, 112, 112, to_resize);
     unsigned char *dst = dst_image + slot * crops;

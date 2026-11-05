@@ -69,8 +69,8 @@ void yuyv_to_rgb(unsigned char *src, u32 stride, u16 width, u16 height,
   }
 }
 
-void resize_image(float *src, u16 old_w, u16 old_h, u16 new_w, u16 new_h,
-                  float *out) {
+void my_resize_image(float *src, u16 old_w, u16 old_h, u16 new_w, u16 new_h,
+                     float *out) {
 
   float ratio_w = (float)(old_w - 1) / (new_w - 1);
   float ratio_h = (float)(old_h - 1) / (new_h - 1);
@@ -106,13 +106,13 @@ void resize_image(float *src, u16 old_w, u16 old_h, u16 new_w, u16 new_h,
   }
 }
 
-void fill_image(float *dst, u16 w, u16 h, float value) {
+void my_fill_image(float *dst, u16 w, u16 h, float value) {
   for (u32 i = 0; i < (u32)w * h * 3; ++i)
     dst[i] = value;
 }
 
-void embed_image(float *src, u16 w, u16 h, float *dst, u16 dst_w, u16 dst_h,
-                 u16 dx, u16 dy) {
+void my_embed_image(float *src, u16 w, u16 h, float *dst, u16 dst_w, u16 dst_h,
+                    u16 dx, u16 dy) {
   u32 old_plane = w * h;
   u32 new_plane = dst_w * dst_h;
   for (u16 k = 0; k < 3; ++k) {
@@ -140,4 +140,19 @@ letterbox letterbox_calc(u16 w_i, u16 h_i, u16 w_f, u16 h_f) {
   smt.dy = (h_f - smt.new_h) / 2;
 
   return smt;
+}
+
+void my_crop_image(const float *src, u16 src_w, u16 src_h, u16 left, u16 top,
+                   u16 side, float *dst) {
+  u32 plane = (u32)src_w * src_h;
+  u32 dst_plane = (u32)side * side;
+
+  for (int k = 0; k < 3; ++k) {
+    for (int j = 0; j < side; ++j) {
+      for (int i = 0; i < side; ++i) {
+        dst[i + j * side + k * dst_plane] =
+            src[left + i + (j + top) * src_w + k * plane];
+      }
+    }
+  }
 }

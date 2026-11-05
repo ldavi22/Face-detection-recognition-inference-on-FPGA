@@ -1,0 +1,43 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/ncnn-generate-param"
+  "param/FastestDet.hex.h"
+  "param/alexnet.hex.h"
+  "param/blazeface.hex.h"
+  "param/efficientnet_b0.hex.h"
+  "param/efficientnetv2_b0.hex.h"
+  "param/googlenet.hex.h"
+  "param/googlenet_int8.hex.h"
+  "param/mnasnet.hex.h"
+  "param/mobilenet.hex.h"
+  "param/mobilenet_int8.hex.h"
+  "param/mobilenet_ssd.hex.h"
+  "param/mobilenet_ssd_int8.hex.h"
+  "param/mobilenet_v2.hex.h"
+  "param/mobilenet_v3.hex.h"
+  "param/mobilenet_yolo.hex.h"
+  "param/mobilenetv2_yolov3.hex.h"
+  "param/nanodet_m.hex.h"
+  "param/proxylessnasnet.hex.h"
+  "param/regnety_400m.hex.h"
+  "param/resnet18.hex.h"
+  "param/resnet18_int8.hex.h"
+  "param/resnet50.hex.h"
+  "param/resnet50_int8.hex.h"
+  "param/shufflenet.hex.h"
+  "param/shufflenet_v2.hex.h"
+  "param/squeezenet.hex.h"
+  "param/squeezenet_int8.hex.h"
+  "param/squeezenet_ssd.hex.h"
+  "param/squeezenet_ssd_int8.hex.h"
+  "param/vgg16.hex.h"
+  "param/vgg16_int8.hex.h"
+  "param/vision_transformer.hex.h"
+  "param/yolo_fastest_1_1.hex.h"
+  "param/yolo_fastestv2.hex.h"
+  "param/yolov4_tiny.hex.h"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang )
+  include(CMakeFiles/ncnn-generate-param.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()
