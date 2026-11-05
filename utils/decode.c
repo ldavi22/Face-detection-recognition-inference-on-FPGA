@@ -143,7 +143,8 @@ int pp_faces(detection *dets, float *src_image, int n, int max_dets, u16 src_w,
     int left = (int)(dets[i].x - side / 2.0f + 0.5f);
     int top = (int)(dets[i].y - side / 2.0f + 0.5f);
 
-    if (left < 0 || top < 0 || left + iside > src_w || top + iside > src_h)
+    if (left < 0 || top < 0 || left + iside > src_w || top + iside > src_h ||
+        iside > MAX_SIDE)
       continue;
 
     my_crop_image(src_image, src_w, src_h, left, top, iside, to_crop);

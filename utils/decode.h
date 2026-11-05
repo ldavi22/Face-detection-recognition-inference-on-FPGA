@@ -1,5 +1,9 @@
 #include "detect.h"
 #include "preprocess.h"
+
+#define MAX_SIDE 1024
+#define MAX_DETECTION 5
+
 typedef struct {
   float x, y, w, h;
   float confidence;

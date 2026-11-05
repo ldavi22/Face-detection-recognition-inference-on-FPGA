@@ -199,7 +199,7 @@ void forward_network(network *netp) {
     }
     l.forward(l, net);
 
-    printf("Batch number: %d \n", l.batch);
+    // printf("Batch number: %d \n", l.batch);
     char path[64];
     snprintf(path, sizeof(path), "layer_%02d.bin", i);
     FILE *fp = fopen(path, "wb");
