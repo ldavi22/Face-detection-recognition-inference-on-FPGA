@@ -5,10 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_DETECTION 5
 #define SRC_W 1280
 #define SRC_H 960
-#define MAX_SIDE 480
 
 int save_raw_images(const unsigned char *buf, int n, size_t img_size,
                     const char *prefix) {

@@ -1,0 +1,220 @@
+module conv1x1 #(
+    parameter C_IN  = 256,
+    parameter C_OUT = 128,
+    parameter POS   = 169,
+    parameter LEAKY = 1
+) (
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire [18:0] avs_address,
+    input  wire        avs_write,
+    input  wire [31:0] avs_writedata,
+    input  wire        avs_read,
+    output reg  [31:0] avs_readdata
+);
+
+  localparam CHUNKS    = C_IN / 4;
+  localparam ACT_WORDS = POS * CHUNKS;
+  localparam WGT_WORDS = C_OUT * CHUNKS;
+  localparam PRM_WORDS = C_OUT * 3;
+  localparam OUT_BYTES = C_OUT * POS;
+
+  localparam REG_CTRL = 3'd0;
+  localparam REG_ACT  = 3'd1;
+  localparam REG_WGT  = 3'd2;
+  localparam REG_PRM  = 3'd3;
+  localparam REG_OUT  = 3'd4;
+
+  wire [2:0]  region = avs_address[18:16];
+  wire [15:0] offset = avs_address[15:0];
+
+  reg [31:0] act_ram[0:ACT_WORDS-1];
+  reg [31:0] wgt_ram[0:WGT_WORDS-1];
+  reg [31:0] prm_ram[0:PRM_WORDS-1];
+  reg [7:0] out_ram[0:OUT_BYTES-1];
+
+  reg [31:0] act_q, wgt_q, prm_q;
+
+  reg start, busy, done;
+  reg [31:0] cycles;
+
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+      start <= 1'b0;
+    else
+      start <= (avs_write && region == REG_CTRL && offset == 16'd0 &&
+                avs_writedata[0]);
+  end
+
+  always @(posedge clk) begin
+    if (avs_write) begin
+      case (region)
+        REG_ACT: act_ram[offset] <= avs_writedata;
+        REG_WGT: wgt_ram[offset] <= avs_writedata;
+        REG_PRM: prm_ram[offset] <= avs_writedata;
+        default: ;
+      endcase
+    end
+  end
+
+  always @(posedge clk) begin
+    if (avs_read) begin
+      case (region)
+        REG_CTRL:
+          avs_readdata <= (offset == 16'd1) ? {30'd0, busy, done}
+                        : (offset == 16'd2) ? cycles
+                                            : 32'd0;
+        REG_OUT: avs_readdata <= {24'd0, out_ram[offset]};
+        default: avs_readdata <= 32'd0;
+      endcase
+    end
+  end
+
+  localparam S_IDLE  = 3'd0;
+  localparam S_P0    = 3'd1;
+  localparam S_P1    = 3'd2;
+  localparam S_P2    = 3'd3;
+  localparam S_P3    = 3'd4;
+  localparam S_P4    = 3'd5;
+  localparam S_RUN   = 3'd6;
+
+  reg [2:0]  state;
+  reg [15:0] f;
+  reg [15:0] p;
+  reg [15:0] cnt;
+
+  reg signed [31:0] bias_r;
+  reg signed [31:0] mult_r;
+  reg        [ 5:0] shift_r;
+  reg        [15:0] prm_addr;
+
+  wire mac_clear = (state == S_RUN) && (cnt == 16'd0);
+  wire mac_en    = (state == S_RUN) && (cnt >= 16'd1) &&
+                                       (cnt <= CHUNKS[15:0]);
+  wire do_write  = (state == S_RUN) && (cnt == CHUNKS[15:0] + 16'd1);
+
+  wire [15:0] k_rd = (cnt < CHUNKS[15:0]) ? cnt : (CHUNKS[15:0] - 16'd1);
+  wire [15:0] act_addr = p * CHUNKS[15:0] + k_rd;
+  wire [15:0] wgt_addr = f * CHUNKS[15:0] + k_rd;
+
+  always @(posedge clk) begin
+    act_q <= act_ram[act_addr];
+    wgt_q <= wgt_ram[wgt_addr];
+    prm_q <= prm_ram[prm_addr];
+  end
+
+  wire signed [31:0] acc;
+  wire signed [ 7:0] q_out;
+
+  mac4 u_mac (
+      .clk  (clk),
+      .rst_n(rst_n),
+      .clear(mac_clear),
+      .en   (mac_en),
+      .init (bias_r),
+      .act  (act_q),
+      .wgt  (wgt_q),
+      .acc  (acc)
+  );
+
+  requant u_rq (
+      .acc     (acc),
+      .mult    (mult_r),
+      .shift   (shift_r),
+      .leaky_en(LEAKY[0]),
+      .out     (q_out)
+  );
+
+  wire [31:0] out_idx = f * POS[15:0] + p;
+
+  always @(posedge clk) begin
+    if (do_write)
+      out_ram[out_idx[15:0]] <= q_out;
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      state    <= S_IDLE;
+      busy     <= 1'b0;
+      done     <= 1'b0;
+      f        <= 16'd0;
+      p        <= 16'd0;
+      cnt      <= 16'd0;
+      cycles   <= 32'd0;
+      prm_addr <= 16'd0;
+      bias_r   <= 32'sd0;
+      mult_r   <= 32'sd0;
+      shift_r  <= 6'd0;
+    end else begin
+
+      if (busy) cycles <= cycles + 32'd1;
+
+      case (state)
+
+        S_IDLE: begin
+          if (start) begin
+            busy   <= 1'b1;
+            done   <= 1'b0;
+            cycles <= 32'd0;
+            f      <= 16'd0;
+            p      <= 16'd0;
+            cnt    <= 16'd0;
+            state  <= S_P0;
+          end
+        end
+
+        S_P0: begin
+          prm_addr <= f * 16'd3 + 16'd0;
+          state    <= S_P1;
+        end
+
+        S_P1: begin
+          prm_addr <= f * 16'd3 + 16'd1;
+          state    <= S_P2;
+        end
+
+        S_P2: begin
+          bias_r   <= prm_q;
+          prm_addr <= f * 16'd3 + 16'd2;
+          state    <= S_P3;
+        end
+
+        S_P3: begin
+          mult_r <= prm_q;
+          state  <= S_P4;
+        end
+
+        S_P4: begin
+          shift_r <= prm_q[5:0];
+          cnt     <= 16'd0;
+          state   <= S_RUN;
+        end
+
+        S_RUN: begin
+          if (cnt == CHUNKS[15:0] + 16'd1) begin
+            cnt <= 16'd0;
+            if (p == POS[15:0] - 16'd1) begin
+              p <= 16'd0;
+              if (f == C_OUT[15:0] - 16'd1) begin
+                busy  <= 1'b0;
+                done  <= 1'b1;
+                state <= S_IDLE;
+              end else begin
+                f     <= f + 16'd1;
+                state <= S_P0;
+              end
+            end else begin
+              p <= p + 16'd1;
+            end
+          end else begin
+            cnt <= cnt + 16'd1;
+          end
+        end
+
+        default: state <= S_IDLE;
+
+      endcase
+    end
+  end
+
+endmodule
